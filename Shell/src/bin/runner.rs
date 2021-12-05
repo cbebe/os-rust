@@ -1,10 +1,8 @@
-use std::{process::exit, time::Duration, time::Instant};
-
-pub fn get_int() -> u64 {
-    let mut input = String::new();
-    if let Ok(_size) = std::io::stdin().read_line(&mut input) {}
-    input.trim().parse().unwrap()
-}
+use os_rust_shell::input::get_int;
+use std::{
+    process::exit,
+    time::{Duration, Instant},
+};
 
 fn bubble_sort(vec: &mut Vec<i32>, max_seconds: u64) {
     let start = Instant::now();
