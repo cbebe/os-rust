@@ -1,3 +1,4 @@
+use crate::process_table::ProcessTable;
 use nix::{
     fcntl::{open, OFlag},
     libc::{STDIN_FILENO, STDOUT_FILENO},
@@ -6,7 +7,8 @@ use nix::{
 };
 use std::{error::Error, ffi::CString};
 
-enum ProcessStatus {
+#[derive(Copy, Clone)]
+pub enum ProcessStatus {
     Running,
     Suspended,
 }
@@ -18,10 +20,21 @@ enum ProcessType {
 }
 
 pub struct Process {
-    pid: i32,
-    time: u32,
-    status: ProcessStatus,
-    cmd: String,
+    pub pid: i32,
+    pub time: u32,
+    pub status: ProcessStatus,
+    pub cmd: String,
+}
+
+impl Process {
+    pub fn new(pid: i32, cmd: &String) -> Process {
+        Process {
+            pid,
+            status: ProcessStatus::Running,
+            cmd: cmd.clone(),
+            time: 0,
+        }
+    }
 }
 
 pub struct CmdOptions {
@@ -30,10 +43,6 @@ pub struct CmdOptions {
     out_file: Option<String>,
     bg: ProcessType,
     argv: Vec<String>,
-}
-
-pub struct ProcessTable {
-    processes: Vec<Process>,
 }
 
 fn redirect(file: String, flags: OFlag, stat: Mode, fileno: i32) -> Result<(), Box<dyn Error>> {
@@ -80,11 +89,6 @@ pub fn parent_exec(table: &mut ProcessTable, options: &CmdOptions, pid: i32) {
             Ok(_) => {}
             Err(_) => {}
         },
-        ProcessType::Background => table.processes.push(Process {
-            pid,
-            status: ProcessStatus::Running,
-            cmd: options.cmd.clone(),
-            time: 0,
-        }),
+        ProcessType::Background => table.insert_job(pid, &options.cmd),
     }
 }

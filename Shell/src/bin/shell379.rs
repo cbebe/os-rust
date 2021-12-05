@@ -1,14 +1,19 @@
 use atty::Stream;
-use nix::libc::{getrusage, rusage, RUSAGE_SELF};
-use std::io::{self, Write};
-use std::mem::zeroed;
+use nix::{
+    libc::{getrusage, rusage, RUSAGE_CHILDREN},
+    sys::wait::wait,
+};
+use std::{
+    io::{self, Write},
+    mem::zeroed,
+};
 
 fn register_handler() {
     // register SIGCHLD handler that would reap dead children
 }
 
 fn parse_input(input: String) {
-    println!("{}", input);
+    println!("{}", input.trim());
     // parse tokens like &, >, and <
     // also get regular inputs and stuff
 
@@ -34,7 +39,7 @@ fn parse_input(input: String) {
 fn print_resource_usage() {
     unsafe {
         let mut usage: rusage = zeroed();
-        getrusage(RUSAGE_SELF, &mut usage);
+        getrusage(RUSAGE_CHILDREN, &mut usage);
         println!("User time = \t {} seconds", usage.ru_utime.tv_sec);
         println!("Sys  time = \t {} seconds", usage.ru_stime.tv_sec);
     }
@@ -42,6 +47,7 @@ fn print_resource_usage() {
 
 fn wait_and_exit() {
     // wait for all children and then exit
+    while let Ok(_) = wait() {}
     // print usage
     println!("Resources used");
     print_resource_usage();
