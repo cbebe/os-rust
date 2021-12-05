@@ -1,37 +1,90 @@
-use crate::error::MyError;
-use nix::NixPath;
 use nix::{
     fcntl::{open, OFlag},
-    unistd::dup2,
+    libc::{STDIN_FILENO, STDOUT_FILENO},
+    sys::{stat::Mode, wait::waitpid},
+    unistd::{close, dup2, execvp, Pid},
 };
-use std::error::Error;
-use std::fs::File;
-#[cfg(unix)]
-use std::os::unix::io::{IntoRawFd, RawFd};
+use std::{error::Error, ffi::CString};
 
 enum ProcessStatus {
     Running,
     Suspended,
 }
 
+#[derive(Copy, Clone)]
+enum ProcessType {
+    Foreground,
+    Background,
+}
+
 pub struct Process {
     pid: i32,
     time: u32,
-    process_status: ProcessStatus,
+    status: ProcessStatus,
     cmd: String,
 }
 
-fn redirect(
-    file: String,
-    permissions: OFlag,
-    stat: i32,
-    fileno: i32,
-) -> Result<(), Box<dyn Error>> {
-    // let file = open(, permissions, stat)?;
-    // #[cfg(unix)]
-    // let raw_fd: RawFd = file.into_raw_fd();
-    // if raw_fd < 0 {
-    //     return Err(MyError::new("Error opening file"));
-    // }
+pub struct CmdOptions {
+    cmd: String,
+    in_file: Option<String>,
+    out_file: Option<String>,
+    bg: ProcessType,
+    argv: Vec<String>,
+}
+
+pub struct ProcessTable {
+    processes: Vec<Process>,
+}
+
+fn redirect(file: String, flags: OFlag, stat: Mode, fileno: i32) -> Result<(), Box<dyn Error>> {
+    let file = open(file.as_str(), flags, stat)?;
+    dup2(file, fileno)?;
+    close(file)?;
     Ok(())
+}
+
+fn to_c_str(arr: Vec<String>) -> Vec<CString> {
+    arr.into_iter()
+        .map(|v| CString::new(v))
+        .filter(|v| v.is_ok())
+        // should not panic since all err are filtered
+        .map(|v| v.unwrap())
+        .collect()
+}
+
+pub fn child_exec(options: CmdOptions) {
+    use std::process::exit;
+    let write_bitmask: OFlag = OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC;
+    if let Some(file) = options.out_file {
+        if let Err(_) = redirect(file, write_bitmask, Mode::S_IWUSR, STDOUT_FILENO) {
+            exit(1)
+        }
+    }
+    if let Some(file) = options.in_file {
+        if let Err(_) = redirect(file, OFlag::O_RDONLY, Mode::S_IRUSR, STDIN_FILENO) {
+            exit(1)
+        }
+    }
+    let program = match CString::new(options.argv[0].clone().into_bytes()) {
+        Ok(string) => string,
+        Err(_) => exit(1),
+    };
+    if let Err(_) = execvp(&program, &to_c_str(options.argv)[..]) {
+        exit(1)
+    }
+}
+
+pub fn parent_exec(table: &mut ProcessTable, options: &CmdOptions, pid: i32) {
+    match options.bg {
+        ProcessType::Foreground => match waitpid(Pid::from_raw(pid), None) {
+            Ok(_) => {}
+            Err(_) => {}
+        },
+        ProcessType::Background => table.processes.push(Process {
+            pid,
+            status: ProcessStatus::Running,
+            cmd: options.cmd.clone(),
+            time: 0,
+        }),
+    }
 }
