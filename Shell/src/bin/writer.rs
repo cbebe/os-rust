@@ -2,7 +2,6 @@ use nix::libc::{getrusage, rusage, RUSAGE_SELF};
 use os_rust_shell::input::get_int;
 use std::{
     fs::write,
-    io::Result,
     mem::zeroed,
     time::{Duration, Instant},
 };
@@ -16,13 +15,14 @@ fn print_usage() {
     }
 }
 
-fn main() -> Result<()> {
+fn main() {
     let max_duration = Duration::from_secs(get_int());
     let start = Instant::now();
+    let vec: Vec<u16> = (0..16000).collect();
+    let output = format!("{:?}", vec);
 
     while start.elapsed() < max_duration {
-        write("/dev/null", b"1")?;
+        write("/dev/null", &output).expect("Unable to write data");
     }
     print_usage();
-    Ok(())
 }
