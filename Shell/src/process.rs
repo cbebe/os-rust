@@ -1,16 +1,26 @@
 use crate::process_table::ProcessTable;
 use nix::{
     fcntl::{open, OFlag},
-    libc::{STDIN_FILENO, STDOUT_FILENO},
+    libc::{getrusage, rusage, RUSAGE_CHILDREN, STDIN_FILENO, STDOUT_FILENO},
     sys::{stat::Mode, wait::waitpid},
     unistd::{close, dup2, execvp, Pid},
 };
-use std::{error::Error, ffi::CString};
+use std::{error::Error, ffi::CString, fmt, mem::zeroed, result};
 
 #[derive(Copy, Clone)]
 pub enum ProcessStatus {
     Running,
     Suspended,
+}
+
+impl fmt::Display for ProcessStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {
+        let char = match self {
+            ProcessStatus::Running => 'R',
+            ProcessStatus::Suspended => 'S',
+        };
+        write!(f, "{}", char)
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -20,16 +30,14 @@ enum ProcessType {
 }
 
 pub struct Process {
-    pub pid: i32,
     pub time: u32,
     pub status: ProcessStatus,
     pub cmd: String,
 }
 
 impl Process {
-    pub fn new(pid: i32, cmd: &String) -> Process {
+    pub fn new(cmd: &String) -> Process {
         Process {
-            pid,
             status: ProcessStatus::Running,
             cmd: cmd.clone(),
             time: 0,
@@ -43,6 +51,15 @@ pub struct CmdOptions {
     out_file: Option<String>,
     bg: ProcessType,
     argv: Vec<String>,
+}
+
+pub fn print_resource_usage() {
+    unsafe {
+        let mut usage: rusage = zeroed();
+        getrusage(RUSAGE_CHILDREN, &mut usage);
+        println!("User time = \t {} seconds", usage.ru_utime.tv_sec);
+        println!("Sys  time = \t {} seconds", usage.ru_stime.tv_sec);
+    }
 }
 
 fn redirect(file: String, flags: OFlag, stat: Mode, fileno: i32) -> Result<(), Box<dyn Error>> {

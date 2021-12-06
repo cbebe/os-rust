@@ -1,19 +1,14 @@
 use atty::Stream;
-use nix::{
-    libc::{getrusage, rusage, RUSAGE_CHILDREN},
-    sys::wait::wait,
-};
-use std::{
-    io::{self, Write},
-    mem::zeroed,
-};
+use nix::sys::wait::wait;
+use os_rust_shell::{process::print_resource_usage, process_table::ProcessTable};
+use std::error::Error;
+use std::io::{self, Write};
 
 fn register_handler() {
     // register SIGCHLD handler that would reap dead children
 }
 
-fn parse_input(input: String) {
-    println!("{}", input.trim());
+fn parse_input(input: String) -> Result<(), Box<dyn Error>> {
     // parse tokens like &, >, and <
     // also get regular inputs and stuff
 
@@ -22,6 +17,10 @@ fn parse_input(input: String) {
     // exit
 
     // jobs
+    if input.trim() == "jobs" {
+        let mut p_table = ProcessTable::new();
+        p_table.show_jobs()?;
+    }
 
     // kill <pid>
 
@@ -34,15 +33,8 @@ fn parse_input(input: String) {
     // sleep <n>
 
     // run shell command
-}
 
-fn print_resource_usage() {
-    unsafe {
-        let mut usage: rusage = zeroed();
-        getrusage(RUSAGE_CHILDREN, &mut usage);
-        println!("User time = \t {} seconds", usage.ru_utime.tv_sec);
-        println!("Sys  time = \t {} seconds", usage.ru_stime.tv_sec);
-    }
+    Ok(())
 }
 
 fn wait_and_exit() {
@@ -54,20 +46,18 @@ fn wait_and_exit() {
     std::process::exit(0);
 }
 
-fn run() {
+fn run() -> Result<(), Box<dyn Error>> {
     let mut input = String::new();
-    match std::io::stdin().read_line(&mut input) {
-        Ok(bytes) => {
-            if bytes == 0 {
-                if atty::is(Stream::Stdin) {
-                    println!();
-                }
-                wait_and_exit();
-            }
-            parse_input(input);
+    let bytes = std::io::stdin().read_line(&mut input)?;
+    // EOF, done with program
+    if bytes == 0 {
+        if atty::is(Stream::Stdin) {
+            println!();
         }
-        Err(e) => eprintln!("{:?}", e),
+        wait_and_exit();
     }
+    parse_input(input)?;
+    Ok(())
 }
 
 fn main() {
@@ -78,6 +68,8 @@ fn main() {
             print!("shell379> ");
             io::stdout().flush().ok().expect("Could not flush stdout");
         }
-        run();
+        if let Err(e) = run() {
+            eprintln!("{}", e);
+        }
     }
 }
