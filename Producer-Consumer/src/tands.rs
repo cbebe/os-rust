@@ -3,10 +3,10 @@ extern "C" {
     pub fn Sleep(n: ::std::os::raw::c_int);
 }
 
-pub fn trans(n: i32) {
-    unsafe { Trans(n) }
+pub fn trans(n: u32) {
+    unsafe { Trans(n as i32) }
 }
 
-pub fn sleep(n: i32) {
-    unsafe { Sleep(n) }
+pub fn sleep(n: u32) {
+    unsafe { Sleep(n as i32) }
 }
