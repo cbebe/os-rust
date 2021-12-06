@@ -1,7 +1,9 @@
 use crate::{
     error::MyError,
-    process::{print_resource_usage, Process},
+    input::CmdOptions,
+    process::{child_exec, parent_exec, print_resource_usage, Process},
 };
+use nix::unistd::{fork, ForkResult, Pid};
 use std::{collections::HashMap, error::Error, process::Command, str};
 
 pub struct ProcessTable {
@@ -9,7 +11,7 @@ pub struct ProcessTable {
 }
 
 impl ProcessTable {
-    pub fn new() -> ProcessTable {
+    pub fn new() -> Self {
         ProcessTable {
             processes: HashMap::new(),
         }
@@ -56,5 +58,30 @@ impl ProcessTable {
         println!("Completed processes:");
         print_resource_usage();
         Ok(())
+    }
+
+    pub fn resume_job(&mut self, pid: Pid) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+    pub fn wait_job(&mut self, pid: Pid) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+    pub fn kill_job(&mut self, pid: Pid) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+    pub fn suspend_job(&mut self, pid: Pid) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    pub fn new_job(&mut self, options: CmdOptions) -> Result<(), Box<dyn Error>> {
+        if options.argv.len() == 0 {
+            return Err(MyError::new("No comand given"));
+        }
+
+        match unsafe { fork() } {
+            Ok(ForkResult::Parent { child, .. }) => Ok(parent_exec(self, &options, child)),
+            Ok(ForkResult::Child) => Ok(child_exec(&options)),
+            Err(e) => Err(Box::new(e)),
+        }
     }
 }

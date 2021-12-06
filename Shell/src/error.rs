@@ -7,7 +7,7 @@ pub struct MyError {
 }
 
 impl MyError {
-    pub fn new(msg: &str) -> Box<MyError> {
+    pub fn new(msg: &str) -> Box<Self> {
         Box::new(MyError {
             details: msg.to_string(),
         })
