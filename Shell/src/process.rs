@@ -26,6 +26,7 @@ impl fmt::Display for ProcessStatus {
     }
 }
 
+#[derive(Clone)]
 pub struct Process {
     pub time: u32,
     pub status: ProcessStatus,
@@ -67,23 +68,23 @@ fn to_c_str(arr: &Vec<String>) -> Vec<CString> {
         .collect()
 }
 
-pub fn child_exec(options: &CmdOptions) {
+fn try_child_exec(options: &CmdOptions) -> Result<(), Box<dyn Error>> {
     let write_bitmask: OFlag = OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC;
     if let Some(file) = &options.out_file {
-        if let Err(_) = redirect(file, write_bitmask, Mode::S_IWUSR, STDOUT_FILENO) {
-            unsafe { _exit(1) }
-        }
+        let file_mode = Mode::from_bits_truncate(0o644);
+        redirect(file, write_bitmask, file_mode, STDOUT_FILENO)?;
     }
     if let Some(file) = &options.in_file {
-        if let Err(_) = redirect(file, OFlag::O_RDONLY, Mode::S_IRUSR, STDIN_FILENO) {
-            unsafe { _exit(1) }
-        }
+        redirect(file, OFlag::O_RDONLY, Mode::S_IRUSR, STDIN_FILENO)?;
     }
-    let program = match CString::new(options.argv[0].clone().into_bytes()) {
-        Ok(string) => string,
-        Err(_) => unsafe { _exit(1) },
-    };
-    if let Err(_) = execvp(&program, &to_c_str(&options.argv)[..]) {
+    let program = CString::new(options.argv[0].clone().into_bytes())?;
+    execvp(&program, &to_c_str(&options.argv)[..])?;
+    Ok(())
+}
+
+pub fn child_exec(options: &CmdOptions) {
+    if let Err(e) = try_child_exec(options) {
+        eprintln!("{}", e);
         unsafe { _exit(1) }
     }
 }
@@ -94,6 +95,6 @@ pub fn parent_exec(table: &mut ProcessTable, options: &CmdOptions, pid: Pid) {
             Ok(_) => {}
             Err(_) => {}
         },
-        ProcessType::Background => table.insert_job(pid.as_raw(), &options.cmd),
+        ProcessType::Background => table.insert_job(pid, &options.cmd),
     }
 }
