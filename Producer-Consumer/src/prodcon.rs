@@ -1,6 +1,6 @@
 use crate::{
     error::CmdLineError,
-    job_queue::{Counter, JobQueue},
+    job_queue::JobQueue,
     logger::{Event, Logger},
     tands::{sleep, trans},
 };
@@ -52,24 +52,26 @@ where
  */
 fn consoomer_func(i: usize) {
     loop {
-        use_queue(|q| q.increment(i, Counter::Asked));
         // log ask
         use_logger(|l| l.log(i, Event::Ask));
         // consume queue
         let (arg, q) = use_queue(|q| q.consume());
 
         // return if no jobs
+        match arg {
+            Some(arg) => {
+                // receive job, log
+                use_logger(|l| l.log(i, Event::Receive { arg, q }));
 
-        // receive job, log
-        use_queue(|q| q.increment(i, Counter::Received));
-        use_logger(|l| l.log(i, Event::Receive { arg, q }));
+                // do job
+                trans(arg as u32);
 
-        // do job
-        trans(arg);
-
-        use_queue(|q| q.increment(i, Counter::Completed));
-        // log job completed
-        use_logger(|l| l.log(i, Event::Complete(arg)));
+                use_queue(|q| q.increment(i));
+                // log job completed
+                use_logger(|l| l.log(i, Event::Complete(arg)));
+            }
+            None => return,
+        }
     }
 }
 
@@ -89,6 +91,7 @@ fn producer_func() {
                     // log sleep
                     let arg = chars.as_str().trim().parse().expect("Sleep parse error");
                     use_logger(|l| l.log(0, Event::Sleep(arg)));
+
                     // add number of sleep
                     sleep(arg);
                 }
@@ -96,16 +99,15 @@ fn producer_func() {
                     let arg = chars.as_str().trim().parse().expect("Trans parse error");
                     // log work
                     // add number of work
-                    let q = use_queue(|q| q.produce(arg));
+                    let q = use_queue(|q| q.produce(Some(arg)));
                     use_logger(|l| l.log(0, Event::Work { arg, q }));
                 }
                 _ => panic!(),
             }
         }
     }
+    use_queue(|q| q.end());
 }
-
-fn print_summary() {}
 
 fn init_globals(n_threads: usize, filename: String) {
     unsafe {
@@ -133,7 +135,7 @@ pub fn main() {
     }
     producer_func();
     for consoomer in consoomers {
-        let _ = consoomer.join();
+        consoomer.join().unwrap();
     }
-    print_summary();
+    use_logger(|l| use_queue(|q| l.print_total_jobs(q)));
 }

@@ -1,48 +1,60 @@
-use std::sync::Mutex;
+use std::collections::VecDeque;
+use std::sync::{Condvar, Mutex};
 
 pub struct JobQueue {
-    pub jobs: Mutex<Vec<u32>>,
-    pub asked: Vec<u32>,
-    pub received: Vec<u32>,
-    pub completed: Vec<u32>,
-}
-
-pub enum Counter {
-    Asked,
-    Received,
-    Completed,
+    n_consumers: usize,
+    jobs: Mutex<VecDeque<Option<u32>>>,
+    completed: Vec<u32>,
+    full: Condvar,
+    empty: Condvar,
 }
 
 impl JobQueue {
     pub fn new(n_threads: usize) -> Self {
         JobQueue {
-            jobs: Mutex::new(Vec::with_capacity(n_threads * 2)),
-            asked: vec![0; n_threads],
-            received: vec![0; n_threads],
+            jobs: Mutex::new(VecDeque::with_capacity(n_threads * 2)),
             completed: vec![0; n_threads],
+            full: Condvar::new(),
+            empty: Condvar::new(),
+            n_consumers: n_threads,
         }
     }
 
-    pub fn increment(&mut self, i: usize, counter: Counter) {
-        let vector = match counter {
-            Counter::Asked => &mut self.asked,
-            Counter::Received => &mut self.received,
-            Counter::Completed => &mut self.completed,
-        };
-        let count = vector
+    pub fn get_completed(&self) -> &Vec<u32> {
+        &self.completed
+    }
+
+    pub fn increment(&mut self, i: usize) {
+        let count = self
+            .completed
             .get_mut(i - 1)
             .expect("Vector should be large enough to be indexed");
         *count = *count + 1;
     }
 
-    pub fn produce(&mut self, n: u32) -> usize {
+    pub fn produce(&mut self, n: Option<u32>) -> usize {
         let mut jobs = self.jobs.lock().unwrap();
-        jobs.push(n);
+        while jobs.len() == jobs.capacity() {
+            jobs = self.full.wait(jobs).unwrap();
+        }
+        jobs.push_back(n);
+        self.empty.notify_one();
         jobs.len()
     }
 
-    pub fn consume(&mut self) -> (u32, usize) {
+    pub fn consume(&mut self) -> (Option<u32>, usize) {
         let mut jobs = self.jobs.lock().unwrap();
-        (jobs.pop().expect("Should not be empty"), jobs.len())
+        while jobs.len() == 0 {
+            jobs = self.empty.wait(jobs).unwrap();
+        }
+        let n = jobs.pop_front().flatten();
+        self.full.notify_one();
+        (n, jobs.len())
+    }
+
+    pub fn end(&mut self) {
+        for _ in 0..(self.n_consumers) {
+            self.produce(None);
+        }
     }
 }
